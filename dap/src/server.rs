@@ -33,6 +33,18 @@ pub struct Server<R: Read, W: Write> {
   pub output: Arc<Mutex<ServerOutput<W>>>,
 }
 
+/// A read-only handle to the server's input stream.
+pub struct ServerReader<R: Read> {
+  input_buffer: BufReader<R>,
+}
+
+/// A write-only handle to the server's output stream.
+pub struct ServerWriter<W: Write> {
+  /// A sharable `ServerOutput` object for sending messages and events from
+  /// other threads.
+  pub output: Arc<Mutex<ServerOutput<W>>>,
+}
+
 /// Handles emission of messages through the connection.
 ///
 /// `ServerOutput` is responsible for sending messages to the connection.
@@ -42,6 +54,68 @@ pub struct Server<R: Read, W: Write> {
 pub struct ServerOutput<W: Write> {
   output_buffer: BufWriter<W>,
   sequence_number: i64,
+}
+
+fn poll_request_internal<B: BufRead>(input_buffer: &mut B) -> Result<Option<Request>, ServerError> {
+  let mut state = ServerState::Header;
+  let mut buffer = String::new();
+  let mut content_length: usize = 0;
+
+  loop {
+    match input_buffer.read_line(&mut buffer) {
+      Ok(read_size) => {
+        if read_size == 0 {
+          break Ok(None);
+        }
+        match state {
+          ServerState::Header => {
+            let parts: Vec<&str> = buffer.trim_end().split(':').collect();
+            if parts.len() == 2 {
+              match parts[0] {
+                "Content-Length" => {
+                  content_length = match parts[1].trim().parse() {
+                    Ok(val) => val,
+                    Err(_) => return Err(ServerError::HeaderParseError { line: buffer }),
+                  };
+                  buffer.clear();
+                  buffer.reserve(content_length);
+                  state = ServerState::Content;
+                }
+                other => {
+                  return Err(ServerError::UnknownHeader {
+                    header: other.to_string(),
+                  })
+                }
+              }
+            } else {
+              return Err(ServerError::HeaderParseError { line: buffer });
+            }
+          }
+          ServerState::Content => {
+            buffer.clear();
+            let mut content = vec![0; content_length];
+            input_buffer
+              .read_exact(content.as_mut_slice())
+              .map_err(ServerError::IoError)?;
+
+            let content = std::str::from_utf8(content.as_slice())
+              .map_err(|e| ServerError::ParseError(DeserializationError::DecodingError(e)))?;
+            let request: Request = serde_json::from_str(content)
+              .map_err(|e| ServerError::ParseError(DeserializationError::SerdeError(e)))?;
+            return Ok(Some(request));
+          }
+        }
+      }
+      Err(e) => return Err(ServerError::IoError(e)),
+    }
+  }
+}
+
+fn respond_internal<F>(mut send_fn: F, response: Response) -> Result<(), ServerError>
+where
+  F: FnMut(Sendable) -> Result<(), ServerError>,
+{
+  send_fn(Sendable::Response(response))
 }
 
 impl<R: Read, W: Write> Server<R, W> {
@@ -58,64 +132,25 @@ impl<R: Read, W: Write> Server<R, W> {
     }
   }
 
+  /// Split this server into a reader and writer, transferring ownership of
+  /// the underlying input and output handles.
+  pub fn split_server(self) -> (ServerReader<R>, ServerWriter<W>) {
+    (
+      ServerReader {
+        input_buffer: self.input_buffer,
+      },
+      ServerWriter {
+        output: self.output,
+      },
+    )
+  }
+
   /// Wait for a request from the development tool
   ///
   /// This will start reading the `input` buffer that is passed to it and will try to interpret
   /// the incoming bytes according to the DAP protocol.
   pub fn poll_request(&mut self) -> Result<Option<Request>, ServerError> {
-    let mut state = ServerState::Header;
-    let mut buffer = String::new();
-    let mut content_length: usize = 0;
-
-    loop {
-      match self.input_buffer.read_line(&mut buffer) {
-        Ok(read_size) => {
-          if read_size == 0 {
-            break Ok(None);
-          }
-          match state {
-            ServerState::Header => {
-              let parts: Vec<&str> = buffer.trim_end().split(':').collect();
-              if parts.len() == 2 {
-                match parts[0] {
-                  "Content-Length" => {
-                    content_length = match parts[1].trim().parse() {
-                      Ok(val) => val,
-                      Err(_) => return Err(ServerError::HeaderParseError { line: buffer }),
-                    };
-                    buffer.clear();
-                    buffer.reserve(content_length);
-                    state = ServerState::Content;
-                  }
-                  other => {
-                    return Err(ServerError::UnknownHeader {
-                      header: other.to_string(),
-                    })
-                  }
-                }
-              } else {
-                return Err(ServerError::HeaderParseError { line: buffer });
-              }
-            }
-            ServerState::Content => {
-              buffer.clear();
-              let mut content = vec![0; content_length];
-              self
-                .input_buffer
-                .read_exact(content.as_mut_slice())
-                .map_err(ServerError::IoError)?;
-
-              let content = std::str::from_utf8(content.as_slice())
-                .map_err(|e| ServerError::ParseError(DeserializationError::DecodingError(e)))?;
-              let request: Request = serde_json::from_str(content)
-                .map_err(|e| ServerError::ParseError(DeserializationError::SerdeError(e)))?;
-              return Ok(Some(request));
-            }
-          }
-        }
-        Err(e) => return Err(ServerError::IoError(e)),
-      }
-    }
+    poll_request_internal(&mut self.input_buffer)
   }
 
   pub fn send(&mut self, body: Sendable) -> Result<(), ServerError> {
@@ -127,7 +162,39 @@ impl<R: Read, W: Write> Server<R, W> {
   }
 
   pub fn respond(&mut self, response: Response) -> Result<(), ServerError> {
-    self.send(Sendable::Response(response))
+    respond_internal(|b| self.send(b), response)
+  }
+
+  pub fn send_event(&mut self, event: Event) -> Result<(), ServerError> {
+    self.send(Sendable::Event(event))
+  }
+
+  pub fn send_reverse_request(&mut self, request: ReverseRequest) -> Result<(), ServerError> {
+    self.send(Sendable::ReverseRequest(request))
+  }
+}
+
+impl<R: Read> ServerReader<R> {
+  /// Wait for a request from the development tool
+  ///
+  /// This will start reading the `input` buffer that is passed to it and will try to interpret
+  /// the incoming bytes according to the DAP protocol.
+  pub fn poll_request(&mut self) -> Result<Option<Request>, ServerError> {
+    poll_request_internal(&mut self.input_buffer)
+  }
+}
+
+impl<W: Write> ServerWriter<W> {
+  pub fn send(&mut self, body: Sendable) -> Result<(), ServerError> {
+    let mut output = self
+      .output
+      .lock()
+      .map_err(|_| ServerError::OutputLockError)?;
+    output.send(body)
+  }
+
+  pub fn respond(&mut self, response: Response) -> Result<(), ServerError> {
+    respond_internal(|b| self.send(b), response)
   }
 
   pub fn send_event(&mut self, event: Event) -> Result<(), ServerError> {
@@ -162,7 +229,7 @@ impl<W: Write> ServerOutput<W> {
   }
 
   pub fn respond(&mut self, response: Response) -> Result<(), ServerError> {
-    self.send(Sendable::Response(response))
+    respond_internal(|b| self.send(b), response)
   }
 
   pub fn send_event(&mut self, event: Event) -> Result<(), ServerError> {

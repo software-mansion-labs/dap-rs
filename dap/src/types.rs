@@ -65,7 +65,7 @@ pub struct ColumnDescriptor {
   pub width: Option<i64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum ChecksumAlgorithm {
   MD5,
@@ -218,7 +218,7 @@ pub struct Capabilities {
   pub supports_single_thread_execution_requests: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 pub struct CustomValue(pub Value);
 
 #[cfg(feature = "integration_testing")]
@@ -242,7 +242,7 @@ impl Dummy<ValueFaker> for CustomValue {
 /// specifying breakpoints.
 ///
 /// Specification: [Source](https://microsoft.github.io/debug-adapter-protocol/specification#Types_Source)
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub struct Source {
@@ -366,7 +366,7 @@ pub struct Breakpoint {
   pub offset: Option<i64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum PresentationHint {
@@ -375,7 +375,7 @@ pub enum PresentationHint {
   DeEmphasize,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub struct Checksum {
@@ -901,7 +901,7 @@ pub struct DisassembledInstruction {
   pub end_column: Option<i64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum VariablePresentationHintKind {
@@ -937,7 +937,7 @@ pub enum VariablePresentationHintKind {
 
 /// Set of attributes represented as an array of Strings. Before introducing
 /// additional values, try to use the listed values.
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum VariablePresentationHintAttributes {
@@ -961,7 +961,7 @@ pub enum VariablePresentationHintAttributes {
   String(String),
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum VariablePresentationHintVisibility {
@@ -974,7 +974,7 @@ pub enum VariablePresentationHintVisibility {
   String(String),
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 #[serde(rename_all = "camelCase")]
 pub struct VariablePresentationHint {
@@ -1171,7 +1171,7 @@ pub struct Scope {
   pub end_column: Option<i64>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum StackFrameModuleid {
@@ -1179,7 +1179,7 @@ pub enum StackFrameModuleid {
   String(String),
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub enum StackFramePresentationhint {
@@ -1191,7 +1191,7 @@ pub enum StackFramePresentationhint {
 /// A Stackframe contains the source location.
 ///
 /// Specification: [StackFrame](https://microsoft.github.io/debug-adapter-protocol/specification#Types_StackFrame)
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub struct StackFrame {
@@ -1268,7 +1268,7 @@ pub struct Thread {
 ///
 /// The client can use this information to present the children in a paged UI and fetch them in
 /// chunks.
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "integration_testing", derive(Dummy))]
 pub struct Variable {
